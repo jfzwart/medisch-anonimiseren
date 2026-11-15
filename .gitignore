@@ -1,0 +1,13 @@
+.venv/
+.venv-build/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+tests/samples/
+tests/output/
+.DS_Store
+# Never commit real documents or personal data
+mijn-gegevens.toml
+real-documents/

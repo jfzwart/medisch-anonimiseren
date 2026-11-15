@@ -1,0 +1,14 @@
+[project]
+name = "anonymizer"
+version = "0.2.0"
+description = "Offline anonymization of Dutch medical documents (Word, PDF, scans) using deduce"
+requires-python = ">=3.12"
+# Dependencies are pinned (with hashes) in requirements.lock and are only installed from
+# wheels/. They are intentionally not listed here: py2app rejects install_requires.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

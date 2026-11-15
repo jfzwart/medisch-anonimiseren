@@ -1,0 +1,16 @@
+# Made-up test data belonging to tests/make_samples.py.
+# The keys are Dutch because this file format is edited by the end user.
+[patient]
+voornamen = ["Johannes", "Petrus"]
+roepnaam = "Jan"
+initialen = "J.P."
+achternaam = "de Vries"
+
+[extra]
+personen = ["Marie de Vries"]
+adressen = ["Kerkstraat 14", "3512 AB"]
+overig = ["4567890"]
+
+[opties]
+data_vervangen = true
+leeftijd_vervangen = true
