@@ -339,9 +339,10 @@ class AppDelegate(NSObject):
     @objc.python_method
     def _worker(self):
         with objc.autorelease_pool():
-            from .engine import Anonymizer, cache_is_fresh
+            from .engine import Anonymizer, bundled_cache_dir, cache_is_fresh
 
-            if cache_is_fresh():
+            bundled = bundled_cache_dir()
+            if cache_is_fresh() or (bundled and cache_is_fresh(bundled)):
                 self._set_status("Even geduld…")
             else:  # first start, or the first start after an update
                 self._set_status("Klaarzetten… dit duurt ongeveer een halve minuut")
@@ -375,8 +376,10 @@ class AppDelegate(NSObject):
 
         done = []
         for i, f in enumerate(files, start=1):
-            self._set_status(f"Bezig met {f.name} ({i} van {len(files)})…")
-            r = process_file(f, DEFAULT_OUTPUT_DIR, self.anonymizer)
+            prefix = f"{f.name}" + (f" ({i} van {len(files)})" if len(files) > 1 else "")
+            self._set_status(f"Bezig met {prefix}…")
+            r = process_file(f, DEFAULT_OUTPUT_DIR, self.anonymizer,
+                             progress=lambda text, prefix=prefix: self._set_status(f"{prefix}: {text}"))
             if r.ok:
                 done.append(r.target)
                 self._log(f"✓  {f.name}  →  klaar ({len(r.replacements)} gegevens vervangen)",

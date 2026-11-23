@@ -11,20 +11,57 @@ from Foundation import NSURL, NSData
 LANGUAGES = ["nl-NL", "en-US"]
 
 
-def _make_request():
+# Attempts in order. On some Macs the default (Neural Engine) path fails with
+# "e5rt_execution_stream_operation_create_precompiled_compute_operation_with_options call
+# failed"; running Vision on the CPU avoids that. "Fast" is the last resort.
+_ATTEMPTS = (
+    ("accurate", False),
+    ("accurate", True),
+    ("fast", True),
+)
+
+
+def _make_request(level: str, cpu_only: bool):
     request = Vision.VNRecognizeTextRequest.alloc().init()
-    request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    request.setRecognitionLevel_(
+        Vision.VNRequestTextRecognitionLevelAccurate
+        if level == "accurate"
+        else Vision.VNRequestTextRecognitionLevelFast
+    )
     request.setRecognitionLanguages_(LANGUAGES)
     request.setUsesLanguageCorrection_(True)
+    if cpu_only:
+        _force_cpu(request)
     return request
 
 
-def _perform(handler) -> str:
-    request = _make_request()
-    ok, error = handler.performRequests_error_([request], None)
-    if not ok:
-        raise RuntimeError(f"Text recognition failed: {error}")
-    return _reading_order(request.results() or [])
+def _force_cpu(request) -> None:
+    """Run every compute stage of the request on the CPU."""
+    devices, _error = request.supportedComputeStageDevicesAndReturnError_(None)
+    for stage, options in (devices or {}).items():
+        cpu = next((d for d in options if "CPU" in type(d).__name__), None)
+        if cpu is not None:
+            request.setComputeDevice_forComputeStage_(cpu, stage)
+
+
+# Index of the first attempt to try. Once the Neural Engine has failed on this Mac, later
+# pages go straight to the attempt that worked instead of failing again every page.
+_first_attempt = 0
+
+
+def _perform(make_handler) -> str:
+    global _first_attempt
+    error = None
+    for index in range(_first_attempt, len(_ATTEMPTS)):
+        level, cpu_only = _ATTEMPTS[index]
+        request = _make_request(level, cpu_only)
+        ok, error = make_handler().performRequests_error_([request], None)
+        if ok:
+            # Remember only the switch to the CPU, never the weaker "fast" mode: that one
+            # may have been needed for a single odd image.
+            _first_attempt = min(index, 1)
+            return _reading_order(request.results() or [])
+    raise RuntimeError(f"Text recognition failed: {error}")
 
 
 def _reading_order(observations) -> str:
@@ -67,8 +104,7 @@ def recognize_image(image) -> str:
     image.convert("RGB").save(buf, format="PNG")
     data = buf.getvalue()
     nsdata = NSData.dataWithBytes_length_(data, len(data))
-    handler = Vision.VNImageRequestHandler.alloc().initWithData_options_(nsdata, None)
-    return _perform(handler)
+    return _perform(lambda: Vision.VNImageRequestHandler.alloc().initWithData_options_(nsdata, None))
 
 
 def recognize_file(path: Path) -> str:
@@ -76,8 +112,7 @@ def recognize_file(path: Path) -> str:
     path = Path(path)
     if path.suffix.lower() in {".heic", ".heif"}:
         url = NSURL.fileURLWithPath_(str(path))
-        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)
-        return _perform(handler)
+        return _perform(lambda: Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None))
 
     from PIL import Image, ImageOps
 

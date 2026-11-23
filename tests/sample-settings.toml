@@ -5,6 +5,7 @@ voornamen = ["Johannes", "Petrus"]
 roepnaam = "Jan"
 initialen = "J.P."
 achternaam = "de Vries"
+geboortedatum = "12-03-1951"
 
 [extra]
 personen = ["Marie de Vries"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 WORD = {".docx"}
 CONVERTIBLE = {".doc", ".rtf", ".odt"}  # converted to .docx with macOS textutil
@@ -38,35 +39,47 @@ def _image_coverage(page) -> float:
 class ExtractedText:
     pages: list[str]
     ocr_pages: list[int] = field(default_factory=list)  # 1-based
+    # Pages where OCR failed and the digital text layer was used instead (1-based).
+    text_layer_fallback: list[int] = field(default_factory=list)
 
 
-def read_pdf(path: Path) -> ExtractedText:
+def read_pdf(path: Path, progress: Callable[[str], None] | None = None) -> ExtractedText:
     import pypdfium2 as pdfium
 
     from . import ocr
 
+    progress = progress or (lambda _text: None)
     pdf = pdfium.PdfDocument(str(path))
-    pages, ocr_pages = [], []
+    total = len(pdf)
+    pages, ocr_pages, fallback = [], [], []
     try:
         for number, page in enumerate(pdf, start=1):
+            progress(f"pagina {number} van {total} wordt gelezen…")
             textpage = page.get_textpage()
             text = textpage.get_text_bounded().replace("\r\n", "\n").replace("\r", "\n")
             textpage.close()
             if len(text.strip()) < _MIN_CHARS_PER_PAGE or _image_coverage(page) >= _MIN_IMAGE_COVERAGE:
                 # OCR the rendered page: that includes both the digital text and the scan.
                 image = page.render(scale=_OCR_DPI / 72).to_pil()
-                text = ocr.recognize_image(image)
-                ocr_pages.append(number)
+                try:
+                    text = ocr.recognize_image(image)
+                    ocr_pages.append(number)
+                except RuntimeError:
+                    if len(text.strip()) < _MIN_CHARS_PER_PAGE:
+                        raise  # nothing to fall back on
+                    fallback.append(number)
             pages.append(text)
             page.close()
     finally:
         pdf.close()
-    return ExtractedText(pages, ocr_pages)
+    return ExtractedText(pages, ocr_pages, fallback)
 
 
-def read_image(path: Path) -> ExtractedText:
+def read_image(path: Path, progress: Callable[[str], None] | None = None) -> ExtractedText:
     from . import ocr
 
+    if progress:
+        progress("tekst wordt herkend…")
     return ExtractedText([ocr.recognize_file(path)], [1])
 
 

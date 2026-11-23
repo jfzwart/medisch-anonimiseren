@@ -24,8 +24,9 @@ This produces `dist/Anonimiseren.zip` (~47 MB).
 
    Without Terminal: open the app once, click *Done*, go to *System Settings → Privacy &
    Security*, scroll down and click **Open Anyway** next to "Anonimiseren".
-4. Open the app. **The first start takes about 30 seconds** (deduce builds its cache), after that
-   only a few seconds. Do this first start yourself.
+4. Open the app and do the first start yourself. The deduce cache is prebuilt into the app, so
+   it is ready within seconds. (macOS may take up to a minute on the very first launch while it
+   checks the app.) While a file is processed, the window shows which page is being read.
 5. If macOS asks whether Anonimiseren may access the *Documents* folder, click **Allow** — the
    results are stored there.
 6. Keep the app in the Dock: right-click its Dock icon → *Options* → *Keep in Dock*.
@@ -33,8 +34,8 @@ This produces `dist/Anonimiseren.zip` (~47 MB).
 ## 3. Fill in the personal details (important)
 
 In the app: menu **Anonimiseren → Mijn gegevens bewerken…** (`⌘ ,`). The file opens in TextEdit.
-Fill in the patient's name, initials, names of family members and regular doctors, address and
-patient numbers, then save. A filled-in example: [`tests/sample-settings.toml`](tests/sample-settings.toml).
+Fill in the patient's name, initials, date of birth (important now that other dates are kept),
+names of family members and regular doctors, address and patient numbers, then save. A filled-in example: [`tests/sample-settings.toml`](tests/sample-settings.toml).
 
 The file lives at `~/Documents/Anonimiseren/mijn-gegevens.toml`. Changes apply immediately;
 no restart needed.

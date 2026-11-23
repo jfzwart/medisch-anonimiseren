@@ -7,7 +7,9 @@ text and to Word documents (preserving formatting).
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +18,35 @@ from rapidfuzz.distance import DamerauLevenshtein
 from .settings import Settings
 
 CACHE_DIR = Path.home() / "Library" / "Caches" / "Anonimiseren"
+_CACHE_FILE = Path("cache") / "lookup_structs.pickle"
+
+
+def bundled_cache_dir() -> Path | None:
+    """The deduce cache prebuilt into the app bundle by scripts/build_app.sh, if any."""
+    resources = os.environ.get("RESOURCEPATH")  # set by py2app inside the .app
+    if not resources:
+        return None
+    path = Path(resources) / "deduce-cache"
+    return path if (path / _CACHE_FILE).exists() else None
+
+
+def _seed_cache(cache_dir: Path) -> None:
+    """Copy the prebuilt cache from the app bundle so the first start needs no ~30 s build.
+
+    Copied rather than used in place: if deduce ever decides to rebuild, it must write to
+    the user's cache folder, never into the signed app bundle.
+    """
+    bundled = bundled_cache_dir()
+    if bundled is None or cache_is_fresh(cache_dir) or not cache_is_fresh(bundled):
+        return
+    target = cache_dir / _CACHE_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".partial")
+    try:
+        shutil.copy2(bundled / _CACHE_FILE, partial)  # copy2 keeps the mtime used by cache_is_fresh
+        partial.replace(target)
+    except OSError:
+        partial.unlink(missing_ok=True)  # e.g. disk full: deduce then builds the cache itself
 
 # Determines which label wins when findings overlap (deduce uses Dutch tags).
 _LABEL_PRIORITY = {"patient": 0, "persoon": 1}
@@ -35,11 +66,44 @@ _MALE = {"dhr", "heer", "meneer"}
 _FEMALE = {"mevr", "mevrouw", "mw"}
 
 # The date of birth is always removed, even when dates are kept.
+# Labels: "geboren", "geb.", "geboortedatum", "geb.datum", "geb. dat.", "geboortedat.", "DOB".
 _DATE_OF_BIRTH = re.compile(
-    r"(?:geboren|geb\.?|geboortedatum)\s*:?\s*(?:op\s+)?"
-    r"(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}\s+[a-z]{3,}\.?\s+\d{4})",
+    r"(?:geb(?:oorte)?\.?\s*-?\s*dat(?:um|\.)?|geboren|geb\.?|d\.?o\.?b\.?)\s*:?\s*(?:op\s+)?"
+    r"(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}[-\s]+[a-z]{3,}\.?[-\s]+\d{4})",
     re.IGNORECASE,
 )
+
+_MONTHS = [
+    ("januari", "jan"), ("februari", "feb"), ("maart", "mrt"), ("april", "apr"), ("mei", "mei"),
+    ("juni", "jun"), ("juli", "jul"), ("augustus", "aug"), ("september", "sep"),
+    ("oktober", "okt"), ("november", "nov"), ("december", "dec"),
+]
+
+
+def _date_pattern(value: str) -> re.Pattern | None:
+    """All common Dutch spellings of one date: 12-03-1951, 12/3/51, 12.03.1951, 12 maart 1951,
+    12 mrt. 1951. None if `value` is not a day-month-year date."""
+    m = re.fullmatch(r"\s*(\d{1,2})\s*[-/. ]\s*(\d{1,2}|[a-z]{3,}\.?)\s*[-/. ]\s*(\d{2}|\d{4})\s*",
+                     value, re.IGNORECASE)
+    if not m:
+        return None
+    day, month_text, year_text = m.groups()
+    day = int(day)
+    if month_text.isdigit():
+        month = int(month_text)
+    else:
+        word = month_text.lower().rstrip(".")
+        month = next((i for i, (full, short) in enumerate(_MONTHS, start=1)
+                      if word == full or word.startswith(short)), 0)
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return None
+    yy = year_text[-2:]
+    y = rf"(?:{year_text}|{yy})" if len(year_text) == 4 else rf"(?:(?:19|20)?{yy})"
+    d, mo = f"0?{day}", f"0?{month}"
+    numeric = rf"{d}\s*[-/.]\s*{mo}\s*[-/.]\s*{y}"
+    full, short = _MONTHS[month - 1]
+    names = rf"{d}[-\s]+(?:{full}|{short}t?\.?)[-\s]+{y}"
+    return re.compile(rf"(?<!\d)(?:{numeric}|{names})(?!\d)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -79,7 +143,7 @@ def cache_is_fresh(cache_dir: Path | None = None) -> bool:
     """
     import importlib.util
 
-    cache_file = (Path(cache_dir) if cache_dir else CACHE_DIR) / "cache" / "lookup_structs.pickle"
+    cache_file = (Path(cache_dir) if cache_dir else CACHE_DIR) / _CACHE_FILE
     spec = importlib.util.find_spec("deduce")
     if not cache_file.exists() or spec is None or spec.origin is None:
         return False
@@ -97,6 +161,7 @@ class Anonymizer:
 
         cache = Path(cache_dir) if cache_dir else CACHE_DIR
         cache.mkdir(parents=True, exist_ok=True)
+        _seed_cache(cache)
         self._deduce = Deduce(cache_path=cache)
         self.use_settings(settings or Settings())
 
@@ -104,6 +169,7 @@ class Anonymizer:
         """Switch to new personal settings without reloading deduce."""
         self.settings = settings
         self._own_patterns = self._build_own_patterns()
+        self._birth_date_pattern = _date_pattern(settings.birth_date) if settings.birth_date else None
         s = self.settings
         self._patient_words = {
             w.lower() for name in [*s.first_names, s.nickname, s.surname] for w in name.split() if len(w) >= 3
@@ -173,8 +239,15 @@ class Anonymizer:
                 if not _is_common_word_use(term, m.group()):
                     findings.append(Finding(m.start(), m.end(), label, m.group(), own=True))
 
+        # The date of birth is always removed, also where it appears without a label.
+        birth_patterns = [p for p in (_date_pattern(m.group(1)) for m in _DATE_OF_BIRTH.finditer(text)) if p]
         for m in _DATE_OF_BIRTH.finditer(text):
             findings.append(Finding(m.start(1), m.end(1), "datum", m.group(1)))
+        if self._birth_date_pattern:
+            birth_patterns.append(self._birth_date_pattern)
+        for pattern in birth_patterns:
+            for m in pattern.finditer(text):
+                findings.append(Finding(m.start(), m.end(), "datum", m.group(), own=True))
 
         findings = [self._fix_patient_label(f) for f in findings]
         findings = self._extend_initials(text, findings)

@@ -11,6 +11,7 @@ import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from . import readers, word
 from .engine import Anonymizer, Replacement, apply_replacements
@@ -47,7 +48,11 @@ def _free_path(directory: Path, name: str) -> Path:
     return target
 
 
-def process_file(path: Path, output_dir: Path, anonymizer: Anonymizer) -> Result:
+def process_file(
+    path: Path, output_dir: Path, anonymizer: Anonymizer, progress: Callable[[str], None] | None = None
+) -> Result:
+    """Anonymize one file. `progress` receives short Dutch status texts (shown in the app)."""
+    progress = progress or (lambda _text: None)
     path = Path(path)
     result = Result(source=path)
     ext = path.suffix.lower()
@@ -65,13 +70,16 @@ def process_file(path: Path, output_dir: Path, anonymizer: Anonymizer) -> Result
                 source = path
                 if ext in readers.CONVERTIBLE:
                     source = readers.convert_to_docx(path, Path(tmp) / "converted.docx")
+                progress("gegevens worden opgezocht…")
                 result.replacements, result.warnings = word.anonymize_docx(source, target, anonymizer)
         else:
-            extracted = readers.read_pdf(path) if ext in readers.PDF else readers.read_image(path)
+            read = readers.read_pdf if ext in readers.PDF else readers.read_image
+            extracted = read(path, progress)
             if not "".join(extracted.pages).strip():
                 result.message = "Er kon geen tekst uit dit bestand gehaald worden."
                 return result
             full_text = _PAGE_BREAK.join(extracted.pages)
+            progress("gegevens worden opgezocht…")
             result.replacements = anonymizer.replacements(full_text)
             clean = apply_replacements(full_text, result.replacements)
             pages = [p.strip("\n") for p in clean.split("\f")]
@@ -83,6 +91,12 @@ def process_file(path: Path, output_dir: Path, anonymizer: Anonymizer) -> Result
                 result.warnings.append(
                     "Tekst is herkend uit een scan. Controleer of handgeschreven namen "
                     "of slecht leesbare stukken goed zijn verwijderd."
+                )
+            if extracted.text_layer_fallback:
+                numbers = ", ".join(str(n) for n in extracted.text_layer_fallback)
+                result.warnings.append(
+                    f"Tekstherkenning lukte niet op pagina {numbers}; alleen de digitale tekst "
+                    "is gebruikt. Gescande stukken van die pagina ontbreken in het resultaat."
                 )
             word.write_text_as_docx(pages, target, note + ".")
     except Exception as e:  # noqa: BLE001 — one broken file must not stop the rest

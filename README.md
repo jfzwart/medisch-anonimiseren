@@ -48,9 +48,14 @@ Then:
    and fixed numbers are always found, in any spelling (case, extra whitespace).
 3. **Extra cleanup passes** on top of deduce:
    - loose initials next to a name are included (`J.P. de Vries`, not just `J.`)
-   - the date of birth is always removed, even when dates are kept
+   - the date of birth is always removed, even when dates are kept (the default): after a label
+     (`geboren`, `geb.`, `geb.datum`, `geboortedatum`, `DOB`, …) and every other spelling of that
+     same date in the text. With `geboortedatum` in `mijn-gegevens.toml` it is also found without
+     a label (`J. de Vries (12-03-1951)`, `12 mrt. 1951`, `12/3/51`)
    - someone else whose initial happens to match the patient's is not labelled `[PATIENT]`
    - short mentions ("collega Jansen") get the same number as the full name
+   - other **dates are kept by default** so the timeline stays readable; set
+     `data_vervangen = true` in `mijn-gegevens.toml` to replace them too
 4. **Replacement** with labels: `[PATIENT]`, `[PERSOON-1]`, `[LOCATIE-2]`, `[DATUM-1]`, …
    The same person gets the same number throughout the document, so Claude can still follow
    the letter. (Labels are deduce's Dutch tags.)
@@ -62,7 +67,10 @@ Then:
    deleted text from track changes. The **file name** is anonymized too.
 7. **Safety net** (Word): every original value that was found is searched again in all text,
    attribute values and external link targets of the whole package, and replaced there too.
-8. **PDF pages that are (partly) a scan** are OCR'd: pages with hardly any text, but also pages
+8. **OCR fallback**: when Apple Vision fails on the Neural Engine (seen on some Macs), it retries
+   on the CPU and remembers that for the next pages; if OCR fails completely on a PDF page with a
+   text layer, that text layer is used, with a warning.
+9. **PDF pages that are (partly) a scan** are OCR'd: pages with hardly any text, but also pages
    where images cover ≥30% of the page (e.g. a portal printout header over a scanned letter).
 
 ### Known limitations
@@ -155,8 +163,10 @@ building. The same applies to the build tooling in [`build-wheels/`](build-wheel
 - ~4,700 lines of Python + lookup lists (plain text). No `socket`/`urllib`/`requests`/
   `subprocess`/`eval`/`exec`.
 - Points of attention (no risk in this setup):
-  - deduce writes a cache (`pickle`, ~77 MB) on first start. We store it in
-    `~/Library/Caches/Anonimiseren`.
+  - deduce needs a cache (`pickle`, ~77 MB). `scripts/build_app.sh` prebuilds it into the app
+    (offline); on first start it is copied to `~/Library/Caches/Anonimiseren`, so deduce never
+    writes into the signed app bundle. The app also never writes `.pyc` files into its bundle
+    (precompiled at build time), which would break the code signature.
   - `importlib` loads classes named in the config; only the bundled config is used.
   - deduce sets logging to DEBUG on import; we reset it. Document text is never logged.
 
