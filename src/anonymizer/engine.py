@@ -7,7 +7,9 @@ text and to Word documents (preserving formatting).
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +18,32 @@ from rapidfuzz.distance import DamerauLevenshtein
 from .settings import Settings
 
 CACHE_DIR = Path.home() / "Library" / "Caches" / "Anonimiseren"
+_CACHE_FILE = Path("cache") / "lookup_structs.pickle"
+
+
+def bundled_cache_dir() -> Path | None:
+    """The deduce cache prebuilt into the app bundle by scripts/build_app.sh, if any."""
+    resources = os.environ.get("RESOURCEPATH")  # set by py2app inside the .app
+    if not resources:
+        return None
+    path = Path(resources) / "deduce-cache"
+    return path if (path / _CACHE_FILE).exists() else None
+
+
+def _seed_cache(cache_dir: Path) -> None:
+    """Copy the prebuilt cache from the app bundle so the first start needs no ~30 s build.
+
+    Copied rather than used in place: if deduce ever decides to rebuild, it must write to
+    the user's cache folder, never into the signed app bundle.
+    """
+    bundled = bundled_cache_dir()
+    if bundled is None or cache_is_fresh(cache_dir) or not cache_is_fresh(bundled):
+        return
+    target = cache_dir / _CACHE_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".partial")
+    shutil.copy2(bundled / _CACHE_FILE, partial)  # copy2 keeps the mtime used by cache_is_fresh
+    partial.replace(target)
 
 # Determines which label wins when findings overlap (deduce uses Dutch tags).
 _LABEL_PRIORITY = {"patient": 0, "persoon": 1}
@@ -79,7 +107,7 @@ def cache_is_fresh(cache_dir: Path | None = None) -> bool:
     """
     import importlib.util
 
-    cache_file = (Path(cache_dir) if cache_dir else CACHE_DIR) / "cache" / "lookup_structs.pickle"
+    cache_file = (Path(cache_dir) if cache_dir else CACHE_DIR) / _CACHE_FILE
     spec = importlib.util.find_spec("deduce")
     if not cache_file.exists() or spec is None or spec.origin is None:
         return False
@@ -97,6 +125,7 @@ class Anonymizer:
 
         cache = Path(cache_dir) if cache_dir else CACHE_DIR
         cache.mkdir(parents=True, exist_ok=True)
+        _seed_cache(cache)
         self._deduce = Deduce(cache_path=cache)
         self.use_settings(settings or Settings())
 

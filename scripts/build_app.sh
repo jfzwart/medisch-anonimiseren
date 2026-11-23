@@ -20,6 +20,28 @@ mkdir -p build
 "$BUILD_VENV/bin/python" setup.py py2app > build/py2app.log 2>&1 || { tail -40 build/py2app.log; exit 1; }
 
 APP=dist/Anonimiseren.app
+RES="$APP/Contents/Resources"
+echo "==> Precompile Python files (the app never writes into its own bundle)"
+# Same Python version as the one inside the app, so the .pyc files match.
+"$BUILD_VENV/bin/python" -I -m compileall -q -j 0 "$RES/lib/python3.12"
+
+echo "==> Prebuild the deduce cache into the app (saves ~30 s on the first start)"
+# deduce rebuilds its cache when a lookup source file is newer than the cache. Give the source
+# files a fixed old date so time zones or clock differences on the target Mac never trigger that.
+# (.py files keep their date so the precompiled .pyc files stay valid.)
+find "$RES/lib/python3.12/deduce/data/lookup/src" -not -name '*.py' -exec touch -t 202001010000 {} +
+sandbox-exec -p '(version 1)(allow default)(deny network*)' \
+  env PYTHONHOME="$RES" "$APP/Contents/MacOS/python" -I -c "
+import logging, sys
+sys.dont_write_bytecode = True
+from pathlib import Path
+sys.path[:0] = ['$RES/lib/python312.zip', '$RES/lib/python3.12', '$RES/lib/python3.12/lib-dynload']
+from deduce import Deduce
+logging.getLogger().setLevel(logging.WARNING)
+Deduce(cache_path=Path('$RES/deduce-cache'))
+"
+test -f "$RES/deduce-cache/cache/lookup_structs.pickle"
+
 echo "==> Ad-hoc signing (required on Apple Silicon)"
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep "$APP"

@@ -32,8 +32,10 @@ adressen = []             # bijvoorbeeld ["Kerkstraat 14", "3512 AB"]
 overig = []               # bijvoorbeeld ["4567890"]
 
 [opties]
-# Data (zoals 12-03-2024) vervangen door [DATUM-1]? Zet op false om data te bewaren.
-data_vervangen = true
+# Data (zoals 12-03-2024) vervangen door [DATUM-1]? Standaard blijven data staan, zodat de
+# tijdlijn te volgen is. De geboortedatum wordt altijd verwijderd. Zet op true om ook alle
+# andere data te vervangen.
+data_vervangen = false
 # Leeftijden (zoals "73 jaar") vervangen?
 leeftijd_vervangen = true
 """
@@ -48,7 +50,7 @@ class Settings:
     people: list[str] = field(default_factory=list)
     addresses: list[str] = field(default_factory=list)
     other: list[str] = field(default_factory=list)
-    replace_dates: bool = True
+    replace_dates: bool = False  # keep dates for the timeline; date of birth is always removed
     replace_ages: bool = True
 
 
@@ -95,6 +97,6 @@ def load(path: Path | None = None, create: bool = True) -> Settings:
         people=_as_list(extra.get("personen")),
         addresses=_as_list(extra.get("adressen")),
         other=_as_list(extra.get("overig")),
-        replace_dates=bool(options.get("data_vervangen", True)),
+        replace_dates=bool(options.get("data_vervangen", False)),
         replace_ages=bool(options.get("leeftijd_vervangen", True)),
     )

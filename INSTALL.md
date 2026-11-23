@@ -24,8 +24,9 @@ This produces `dist/Anonimiseren.zip` (~47 MB).
 
    Without Terminal: open the app once, click *Done*, go to *System Settings → Privacy &
    Security*, scroll down and click **Open Anyway** next to "Anonimiseren".
-4. Open the app. **The first start takes about 30 seconds** (deduce builds its cache), after that
-   only a few seconds. Do this first start yourself.
+4. Open the app and do the first start yourself. The deduce cache is prebuilt into the app, so
+   it is ready within seconds. (macOS may take up to a minute on the very first launch while it
+   checks the app.) While a file is processed, the window shows which page is being read.
 5. If macOS asks whether Anonimiseren may access the *Documents* folder, click **Allow** — the
    results are stored there.
 6. Keep the app in the Dock: right-click its Dock icon → *Options* → *Keep in Dock*.
