@@ -22,6 +22,7 @@ voornamen = []            # bijvoorbeeld ["Johannes", "Petrus"]
 roepnaam = ""             # bijvoorbeeld "Jan"
 initialen = ""            # bijvoorbeeld "J.P."
 achternaam = ""           # bijvoorbeeld "de Vries"
+geboortedatum = ""        # bijvoorbeeld "12-03-1951" (wordt in elke schrijfwijze verwijderd)
 
 [extra]
 # Namen van familie, mantelzorgers, vaste artsen, enz. (elke naam apart)
@@ -47,6 +48,7 @@ class Settings:
     nickname: str = ""
     initials: str = ""
     surname: str = ""
+    birth_date: str = ""
     people: list[str] = field(default_factory=list)
     addresses: list[str] = field(default_factory=list)
     other: list[str] = field(default_factory=list)
@@ -94,6 +96,7 @@ def load(path: Path | None = None, create: bool = True) -> Settings:
         nickname=str(patient.get("roepnaam", "")).strip(),
         initials=str(patient.get("initialen", "")).strip(),
         surname=str(patient.get("achternaam", "")).strip(),
+        birth_date=str(patient.get("geboortedatum", "")).strip(),
         people=_as_list(extra.get("personen")),
         addresses=_as_list(extra.get("adressen")),
         other=_as_list(extra.get("overig")),

@@ -77,6 +77,17 @@ def unit_checks() -> list[str]:
     )
     if "12-03-1951" in out or "28-10-2024" not in out or "4 november 2024" not in out:
         problems.append(f"default must keep dates but remove the date of birth: {out}")
+    default = Anonymizer(settings.Settings())
+    for text in ["Geb.datum: 12-03-1951", "Geb. dat.: 12-03-1951", "DOB: 12-03-1951",
+                 "geb. 12 mrt. 1951, controle op 12-3-1951"]:
+        out = default.anonymize(text)
+        if "1951" in out:
+            problems.append(f"date of birth left behind: {out}")
+    keep_dates = settings.load(ROOT / "tests" / "sample-settings.toml")
+    keep_dates.replace_dates = False
+    out = Anonymizer(keep_dates).anonymize("Pat. J. de Vries (12-03-1951), echo 28-10-2024. Zie 12 maart 1951.")
+    if "1951" in out or "28-10-2024" not in out:
+        problems.append(f"geboortedatum from the settings not removed in every spelling: {out}")
     out = a.anonymize("Volgende afspraak in jan. bij de poli. Groet aan JAN DE VRIES.")
     if "in jan." not in out or "VRIES" in out:
         problems.append(f"case handling of personal names wrong: {out}")
@@ -154,6 +165,21 @@ def ocr_failure_checks(samples: Path, output: Path) -> list[str]:
     finally:
         ocr._first_attempt = 0
 
+    class _OnlyFastWorks(_NeuralEngineFails):
+        def performRequests_error_(self, requests, error):
+            if requests[0].recognitionLevel() != Vision.VNRequestTextRecognitionLevelFast:
+                return False, "simulated failure on one odd image"
+            return self.handler.performRequests_error_(requests, error)
+
+    try:
+        ocr._perform(lambda: _OnlyFastWorks(make_handler().handler))
+        if ocr._first_attempt != 1:
+            problems.append("one image that only worked in fast mode downgraded OCR for later pages")
+    except RuntimeError as e:
+        problems.append(f"fast-mode fallback did not work: {e}")
+    finally:
+        ocr._first_attempt = 0
+
     def broken(_image):
         raise RuntimeError("Text recognition failed: simulated")
 
@@ -201,6 +227,20 @@ def speed_checks(samples: Path, output: Path) -> list[str]:
             engine._seed_cache(user_cache)
             if not engine.cache_is_fresh(user_cache):
                 problems.append("prebuilt cache from the app bundle was not copied to the user cache")
+
+            def disk_full(*_args, **_kwargs):
+                raise OSError(28, "No space left on device")
+
+            broken_cache = Path(tmp) / "broken-cache"
+            original, engine.shutil.copy2 = engine.shutil.copy2, disk_full
+            try:
+                engine._seed_cache(broken_cache)
+            except OSError:
+                problems.append("a failed cache copy stops the app from starting")
+            finally:
+                engine.shutil.copy2 = original
+            if list(broken_cache.rglob("*.partial")):
+                problems.append("a failed cache copy left a .partial file behind")
         finally:
             if old is None:
                 os.environ.pop("RESOURCEPATH")

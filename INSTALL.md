@@ -34,8 +34,8 @@ This produces `dist/Anonimiseren.zip` (~47 MB).
 ## 3. Fill in the personal details (important)
 
 In the app: menu **Anonimiseren → Mijn gegevens bewerken…** (`⌘ ,`). The file opens in TextEdit.
-Fill in the patient's name, initials, names of family members and regular doctors, address and
-patient numbers, then save. A filled-in example: [`tests/sample-settings.toml`](tests/sample-settings.toml).
+Fill in the patient's name, initials, date of birth (important now that other dates are kept),
+names of family members and regular doctors, address and patient numbers, then save. A filled-in example: [`tests/sample-settings.toml`](tests/sample-settings.toml).
 
 The file lives at `~/Documents/Anonimiseren/mijn-gegevens.toml`. Changes apply immediately;
 no restart needed.

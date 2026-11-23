@@ -57,7 +57,9 @@ def _perform(make_handler) -> str:
         request = _make_request(level, cpu_only)
         ok, error = make_handler().performRequests_error_([request], None)
         if ok:
-            _first_attempt = index
+            # Remember only the switch to the CPU, never the weaker "fast" mode: that one
+            # may have been needed for a single odd image.
+            _first_attempt = min(index, 1)
             return _reading_order(request.results() or [])
     raise RuntimeError(f"Text recognition failed: {error}")
 

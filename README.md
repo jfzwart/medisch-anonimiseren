@@ -48,7 +48,10 @@ Then:
    and fixed numbers are always found, in any spelling (case, extra whitespace).
 3. **Extra cleanup passes** on top of deduce:
    - loose initials next to a name are included (`J.P. de Vries`, not just `J.`)
-   - the date of birth is always removed, even when dates are kept (the default)
+   - the date of birth is always removed, even when dates are kept (the default): after a label
+     (`geboren`, `geb.`, `geb.datum`, `geboortedatum`, `DOB`, …) and every other spelling of that
+     same date in the text. With `geboortedatum` in `mijn-gegevens.toml` it is also found without
+     a label (`J. de Vries (12-03-1951)`, `12 mrt. 1951`, `12/3/51`)
    - someone else whose initial happens to match the patient's is not labelled `[PATIENT]`
    - short mentions ("collega Jansen") get the same number as the full name
    - other **dates are kept by default** so the timeline stays readable; set
