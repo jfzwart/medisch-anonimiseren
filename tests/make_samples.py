@@ -80,7 +80,7 @@ def make_docx(path: Path) -> None:
         "De heer De Vries (73 jaar) is bekend met de ziekte van Parkinson. Hij werd vergezeld "
         "door zijn echtgenote Marie de Vries. Echocardiografie op 28-10-2024 toonde een LVEF van 45%."
     )
-    doc.add_paragraph("Beleid: start metoprolol 50 mg 1dd. Controle over 6 weken.")
+    doc.add_paragraph("Beleid: start metoprolol 50 mg 1dd. Controle over 6 weken. Zie ook 12 maart 1951.")
 
     # Hyperlink containing an e-mail address
     p = doc.add_paragraph("Vragen? Mail ")

@@ -237,8 +237,8 @@ class AppDelegate(NSObject):
 
         content.addSubview_(_label("Brieven anonimiseren", NSMakeRect(24, HEIGHT - 60, WIDTH - 48, 34), 26, bold=True))
         content.addSubview_(_label(
-            "Namen, adressen, geboortedatum en andere persoonlijke gegevens worden eruit gehaald. "
-            "Alles blijft op deze computer.",
+            "Namen, adressen en andere persoonlijke gegevens worden eruit gehaald. "
+            "Data blijven staan. Alles blijft op deze computer.",
             NSMakeRect(40, HEIGHT - 108, WIDTH - 80, 40), 14, NSColor.secondaryLabelColor()))
 
         self.drop_zone = DropZone.alloc().initWithFrame_(NSMakeRect(24, 210, WIDTH - 48, HEIGHT - 330))
@@ -373,6 +373,10 @@ class AppDelegate(NSObject):
             return
 
         self.anonymizer.use_settings(self._load_settings())  # use edited settings right away
+        if self.anonymizer.settings.replace_dates:
+            self._log("Data worden vervangen.")
+        else:
+            self._log("Data blijven staan.")
 
         done = []
         for i, f in enumerate(files, start=1):

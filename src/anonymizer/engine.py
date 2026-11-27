@@ -65,7 +65,7 @@ _TITLES = {
 _MALE = {"dhr", "heer", "meneer"}
 _FEMALE = {"mevr", "mevrouw", "mw"}
 
-# The date of birth is always removed, even when dates are kept.
+# With replace_dates, a date of birth is removed after a label and in every other spelling.
 # Labels: "geboren", "geb.", "geboortedatum", "geb.datum", "geb. dat.", "geboortedat.", "DOB".
 _DATE_OF_BIRTH = re.compile(
     r"(?:geb(?:oorte)?\.?\s*-?\s*dat(?:um|\.)?|geboren|geb\.?|d\.?o\.?b\.?)\s*:?\s*(?:op\s+)?"
@@ -239,15 +239,16 @@ class Anonymizer:
                 if not _is_common_word_use(term, m.group()):
                     findings.append(Finding(m.start(), m.end(), label, m.group(), own=True))
 
-        # The date of birth is always removed, also where it appears without a label.
-        birth_patterns = [p for p in (_date_pattern(m.group(1)) for m in _DATE_OF_BIRTH.finditer(text)) if p]
-        for m in _DATE_OF_BIRTH.finditer(text):
-            findings.append(Finding(m.start(1), m.end(1), "datum", m.group(1)))
-        if self._birth_date_pattern:
-            birth_patterns.append(self._birth_date_pattern)
-        for pattern in birth_patterns:
-            for m in pattern.finditer(text):
-                findings.append(Finding(m.start(), m.end(), "datum", m.group(), own=True))
+        # Every date stays when replace_dates is off, including the date of birth.
+        if self.settings.replace_dates:
+            birth_patterns = [p for p in (_date_pattern(m.group(1)) for m in _DATE_OF_BIRTH.finditer(text)) if p]
+            for m in _DATE_OF_BIRTH.finditer(text):
+                findings.append(Finding(m.start(1), m.end(1), "datum", m.group(1)))
+            if self._birth_date_pattern:
+                birth_patterns.append(self._birth_date_pattern)
+            for pattern in birth_patterns:
+                for m in pattern.finditer(text):
+                    findings.append(Finding(m.start(), m.end(), "datum", m.group(), own=True))
 
         findings = [self._fix_patient_label(f) for f in findings]
         findings = self._extend_initials(text, findings)

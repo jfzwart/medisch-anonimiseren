@@ -26,17 +26,18 @@ from anonymizer.pipeline import collect_files, process_file  # noqa: E402
 # Everything in the sample letters that must NOT appear anywhere in the output.
 SENSITIVE = [
     "Vries", "Jan ", "J.P.", "Marie", "Bakker", "A.M.", "Jansen", "123456782", "4567890",
-    "12-03-1951", "Kerkstraat", "3512", "06-12345678", "030-2501234", "umcutrecht.nl",
+    "Kerkstraat", "3512", "06-12345678", "030-2501234", "umcutrecht.nl",
     "Heidelberglaan", "3584", "Dorpsstraat", "3701", "De Linde",
     "marie.devries@ziggo.nl", "mijnpatient.nl", "MdV",
 ]
-# Dates in the letters (not the date of birth): replaced only with `data_vervangen = true`.
-LETTER_DATES = ["28-10-2024", "4 november 2024"]
+# Every date, including the date of birth: replaced only with `data_vervangen = true`.
+LETTER_DATES = ["28-10-2024", "4 november 2024", "12-03-1951", "12 maart 1951"]
 # Medical content that MUST remain.
 MUST_REMAIN = ["Parkinson", "metoprolol", "LVEF", "45%"]
 
 
-def check_docx(path: Path, must_remain: list[str] = MUST_REMAIN, dates_kept: bool = False) -> list[str]:
+def check_docx(path: Path, must_remain: list[str] = MUST_REMAIN, dates_kept: bool = False,
+                 expect_birth_date: bool = False) -> list[str]:
     """Search every part of the .docx (all XML and relationships, not just visible text)."""
     problems = []
     with zipfile.ZipFile(path) as z:
@@ -60,8 +61,12 @@ def check_docx(path: Path, must_remain: list[str] = MUST_REMAIN, dates_kept: boo
             dates = re.findall(r"Echo op (\[DATUM-\d+\]), controle op (\[DATUM-\d+\])", body)
             if not dates or dates[0][0] == dates[0][1]:
                 problems.append(f"different dates got the same placeholder: {dates}")
-    elif dates_kept and not any(d in body for d in LETTER_DATES):
-        problems.append(f"letter dates were replaced although data_vervangen is off")
+    elif dates_kept and not any(d in body for d in ("28-10-2024", "4 november 2024")):
+        problems.append("letter dates were replaced although data_vervangen is off")
+    if expect_birth_date and dates_kept:
+        kept = [d for d in ("12-03-1951", "12 maart 1951") if d not in body]
+        if kept:
+            problems.append(f"date of birth was replaced although data_vervangen is off: {kept}")
     return problems
 
 
@@ -75,19 +80,52 @@ def unit_checks() -> list[str]:
     out = Anonymizer(settings.Settings()).anonymize(
         "Dhr. Pietersen, geboren 12-03-1951. Echo op 28-10-2024, controle 4 november 2024."
     )
-    if "12-03-1951" in out or "28-10-2024" not in out or "4 november 2024" not in out:
-        problems.append(f"default must keep dates but remove the date of birth: {out}")
-    default = Anonymizer(settings.Settings())
+    if "[DATUM" in out or "12-03-1951" not in out or "28-10-2024" not in out or "4 november 2024" not in out:
+        problems.append(f"default must keep every date, including the date of birth: {out}")
+    kept = Anonymizer(settings.Settings())
     for text in ["Geb.datum: 12-03-1951", "Geb. dat.: 12-03-1951", "DOB: 12-03-1951",
                  "geb. 12 mrt. 1951, controle op 12-3-1951"]:
-        out = default.anonymize(text)
+        out = kept.anonymize(text)
+        if "[DATUM" in out or "1951" not in out:
+            problems.append(f"date replaced although data_vervangen is off: {out}")
+    for text in ["Geb.datum: 12-03-1951", "Geb. dat.: 12-03-1951", "DOB: 12-03-1951",
+                 "geb. 12 mrt. 1951, controle op 12-3-1951"]:
+        out = a.anonymize(text)
         if "1951" in out:
-            problems.append(f"date of birth left behind: {out}")
+            problems.append(f"date of birth left behind although data_vervangen is on: {out}")
     keep_dates = settings.load(ROOT / "tests" / "sample-settings.toml")
     keep_dates.replace_dates = False
     out = Anonymizer(keep_dates).anonymize("Pat. J. de Vries (12-03-1951), echo 28-10-2024. Zie 12 maart 1951.")
-    if "1951" in out or "28-10-2024" not in out:
-        problems.append(f"geboortedatum from the settings not removed in every spelling: {out}")
+    if "[DATUM" in out or "12 maart 1951" not in out or "28-10-2024" not in out:
+        problems.append(f"a date was replaced although data_vervangen is off: {out}")
+    out = a.anonymize("Pat. J. de Vries (12-03-1951), echo 28-10-2024. Zie 12 maart 1951.")
+    if "1951" in out or "28-10-2024" in out:
+        problems.append(f"dates kept although data_vervangen is on: {out}")
+    # A medical expertise letter: every date stays, including after "Datum" and "Geboren".
+    # "false" in quotes must mean the same as false; the settings file tells the user to quote text.
+    expertise = (
+        "Utrecht, 4 november 2024\n"
+        "Datum Expertise : 15-04-2024\n"
+        "Geboren : 12-03-1958\n"
+        "Op uw verzoek werd A. Pietersen, geboren 12 maart 1958, op 27 juli 2024\n"
+    )
+    quoted = settings.Settings()
+    with tempfile.TemporaryDirectory() as tmp:
+        quoted_file = Path(tmp) / "mijn-gegevens.toml"
+        quoted_file.write_text('[opties]\ndata_vervangen = "false"\nleeftijd_vervangen = "false"\n',
+                                encoding="utf-8")
+        quoted = settings.load(quoted_file)
+        on_file = Path(tmp) / "aan.toml"
+        on_file.write_text('[opties]\ndata_vervangen = "true"\n', encoding="utf-8")
+        if not settings.load(on_file).replace_dates:
+            problems.append('quoted "true" was read as off')
+    if quoted.replace_dates or quoted.replace_ages:
+        problems.append(f"quoted false was read as on: dates={quoted.replace_dates} ages={quoted.replace_ages}")
+    out = Anonymizer(quoted).anonymize(expertise)
+    kept_bits = ["4 november 2024", "15-04-2024", "12-03-1958", "12 maart 1958", "27 juli 2024"]
+    missing = [bit for bit in kept_bits if bit not in out]
+    if "[DATUM" in out or missing:
+        problems.append(f"expertise dates were replaced: missing={missing} out={out}")
     out = a.anonymize("Volgende afspraak in jan. bij de poli. Groet aan JAN DE VRIES.")
     if "in jan." not in out or "VRIES" in out:
         problems.append(f"case handling of personal names wrong: {out}")
@@ -284,7 +322,10 @@ def main() -> int:
         print(f"\n== {name}")
         for f in collect_files([samples]):
             r = process_file(f, output / name, anonymizer)
-            problems = [r.message] if not r.ok else check_docx(r.target, dates_kept=not s.replace_dates)
+            keep = not s.replace_dates
+            birth = keep and r.source.suffix.lower() in {".docx", ".doc"} and "verborgen" not in r.source.name
+            problems = [r.message] if not r.ok else check_docx(
+                r.target, dates_kept=keep, expect_birth_date=birth)
             print(("  OK    " if not problems else "  FAIL  ") + f.name)
             for p in problems:
                 print("        - " + p)
